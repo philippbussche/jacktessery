@@ -1,0 +1,4 @@
+tmp_images/*
+.DS_Store
+__pycache__/
+.vscode/

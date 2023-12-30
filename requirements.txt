@@ -1,0 +1,4 @@
+flask
+prometheus-flask-exporter
+pytesseract
+configparser

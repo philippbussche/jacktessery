@@ -1,0 +1,7 @@
+version: '3'
+
+services:
+  jacktessery:
+    image: "jacktessery:3"
+    ports:
+      - "8002:8000"
