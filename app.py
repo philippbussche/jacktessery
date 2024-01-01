@@ -109,12 +109,14 @@ def manipulate_image(img, threshold=230, crop=(1730, 1650, 2010, 1890), filename
         im_invert = ImageOps.invert(im_dilate)
     else:
         im_invert = ImageOps.invert(im_crop)
+    # add a border of 5 pixels to the image
+    im_border = ImageOps.expand(im_invert, border=5, fill='black')
     # save the image to a file 
     if config['general']['save_result_image']:
         dest_filename = config['general']['save_image_path'] + "/" + filename
         LOGGER.info('Saving result image to %s' % dest_filename)
-        im_invert.save(dest_filename, quality=100, subsampling=0)
-    return im_invert
+        im_border.save(dest_filename, quality=100, subsampling=0)
+    return im_border
 
 def set_prom_metric_with_validation(metric_obj, thing):
     if metric_obj.validate():
