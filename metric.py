@@ -4,10 +4,11 @@ from config import config
 
 # a class to represent a metric
 class Metric:
-    def __init__(self, name, value, max_value, max_rate):
+    def __init__(self, name, value, confidence, max_value, max_rate):
         self.name = name
-        self.previous_value = value
+        self.previous_value = None
         self.value = value
+        self.confidence = confidence
         self.max_value = max_value
         self.max_rate = max_rate
         self.last_updated = round(time.time(), 0)
@@ -41,11 +42,16 @@ class Metric:
     def get_max_rate(self):
         return self.max_rate
     
+    # get confidence
+    def get_confidence(self):
+        return self.confidence
+    
     # set the metric value
-    def set_value(self, value):
+    def set_value(self, value, confidence):
         self.set_previous_value(self.value)
         LOGGER.info('Setting metric %s to %s' % (self.name, value))
         self.value = value
+        self.confidence = confidence
         self.set_sample_frequency(time.time() - self.get_last_updated())
         self.set_last_updated(time.time())
 
