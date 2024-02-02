@@ -2,6 +2,6 @@ version: '3'
 
 services:
   jacktessery:
-    image: "jacktessery:3"
+    image: "jacktessery:test"
     ports:
-      - "8002:8000"
+      - "7000:7000"

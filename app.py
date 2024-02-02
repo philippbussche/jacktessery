@@ -21,6 +21,7 @@ for metric in config['metrics']:
     if config['metrics'][metric]['enabled']:
         LOGGER.info('Creating prometheus metric %s' % metric)
         prom_metrics[metric] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], metric), 'Metric %s of a thing' % metric, labelnames=['thing'])
+        prom_metrics[metric + "_confidence"] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], metric + "_confidence"), 'Metric %s confidence of a thing' % metric, labelnames=['thing'])
     else:
         LOGGER.warning('Skipping prometheus metric %s because it is disabled' % metric)
 prom_metrics["last_updated"] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], "last_updated"), 'Metric last_updated of a thing', labelnames=['thing'])
@@ -51,14 +52,15 @@ def upload(thing):
             LOGGER.info('Getting metric %s of %s' % (metric, thing))
             metric_obj = get(img, config['metrics'], metric, suffix)
             response[metric] = set_prom_metric_with_validation(metric_obj, thing)
+            response[metric + "_confidence"] = metric_obj.get_confidence()
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric, thing))
     return jsonify(response)
 
-def set_metric(metric, label, value):
+def set_metric(metric, labels, value):
     if value is not None:
         LOGGER.info('Setting prometheus metric %s to %s' % (metric, value))
-        metric.labels(label).set(value)
+        metric.labels(labels).set(value)
     else:
         LOGGER.warning('Not setting prometheus metric %s because value is None' % metric)
 
@@ -69,16 +71,26 @@ def get_value(img, lang, config):
         value = None
     return value
 
+def get_data(img, lang, config):
+    try:
+        data = pytesseract.image_to_data(img, lang=lang, config=config, output_type=pytesseract.Output.DICT)
+    except ValueError:
+        data = None
+    return data
+
 def get(img, config, config_key, suffix):
     img = manipulate_image(img, threshold=config[config_key]['threshold'], crop=(config[config_key]['x1'], config[config_key]['y1'], config[config_key]['x2'], config[config_key]['y2']), filename='result_' + config_key + "_" + suffix + ".jpg", suffix=suffix, erode=config[config_key]['erode'], erode_cycles=config[config_key]['erode_cycles'], dilate=config[config_key]['dilate'])
     value = get_value(img, lang=config[config_key]['lang'], config=config[config_key]['config'])
+    data = get_data(img, lang=config[config_key]['lang'], config=config[config_key]['config'])
+    confidence = data['conf'][4]
+    value_from_data = int(data['text'][4])
     if config_key in metric_objects:
         metric_obj = metric_objects[config_key]
         LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
-        metric_obj.set_value(value)
+        metric_obj.set_value(value_from_data, confidence)
     else:
         LOGGER.info('Creating new metric object for %s' % config_key)
-        metric_obj = Metric(config_key, value, config[config_key]['max_value'], config[config_key]['max_rate'])
+        metric_obj = Metric(config_key, value_from_data, confidence, config[config_key]['max_value'], config[config_key]['max_rate'])
     metric_objects[config_key] = metric_obj
     return metric_obj
 
@@ -121,6 +133,7 @@ def manipulate_image(img, threshold=230, crop=(1730, 1650, 2010, 1890), filename
 def set_prom_metric_with_validation(metric_obj, thing):
     if metric_obj.validate():
         set_metric(prom_metrics[metric_obj.get_name()], thing, metric_obj.get_value())
+        set_metric(prom_metrics[metric_obj.get_name() + "_confidence"], thing, metric_obj.get_confidence())
         set_metric(prom_metrics["last_updated"], thing, metric_obj.get_last_updated())
         return metric_obj.get_value()
     else:
