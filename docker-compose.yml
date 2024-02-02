@@ -5,3 +5,7 @@ services:
     image: "jacktessery:test"
     ports:
       - "7000:7000"
+    volumes:
+      - ./tmp_images:/tmp_images
+      - ./config.properties:/config.properties
+      - ./data:/data
