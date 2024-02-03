@@ -52,7 +52,6 @@ def upload(thing):
             LOGGER.info('Getting metric %s of %s' % (metric, thing))
             standard_metric_obj = get(img, config['metrics'], metric, suffix)
             response = set_prom_metric_with_validation(standard_metric_obj, thing)
-            # response[metric + "_confidence"] = standard_metric_obj.get_confidence_metric().get_value()
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric, thing))
     return jsonify(response.serialize() if isinstance(response, StandardMetric) else response)
