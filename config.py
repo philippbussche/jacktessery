@@ -30,6 +30,7 @@ CHARGING_STATUS_ERODE_CYCLES = config.getint('charging_status', 'erode_cycles')
 CHARGING_STATUS_DILATE = config.getboolean('charging_status', 'dilate')
 CHARGING_STATUS_MAX_VALUE = config.getint('charging_status', 'max_value')
 CHARGING_STATUS_MAX_RATE = config.getint('charging_status', 'max_rate')
+CHARGING_STATUS_MIN_CONFIDENCE = config.getint('charging_status', 'min_confidence')
 
 # input watts configuration
 INPUT_WATTS_THRESHOLD = config.getint('input_watts', 'threshold')
@@ -45,6 +46,7 @@ INPUT_WATTS_ERODE_CYCLES = config.getint('input_watts', 'erode_cycles')
 INPUT_WATTS_DILATE = config.getboolean('input_watts', 'dilate')
 INPUT_WATTS_MAX_VALUE = config.getint('input_watts', 'max_value')
 INPUT_WATTS_MAX_RATE = config.getint('input_watts', 'max_rate')
+INPUT_WATTS_MIN_CONFIDENCE = config.getint('input_watts', 'min_confidence')
 
 # output watts configuration
 OUTPUT_WATTS_THRESHOLD = config.getint('output_watts', 'threshold')
@@ -60,6 +62,7 @@ OUTPUT_WATTS_ERODE_CYCLES = config.getint('output_watts', 'erode_cycles')
 OUTPUT_WATTS_DILATE = config.getboolean('output_watts', 'dilate')
 OUTPUT_WATTS_MAX_VALUE = config.getint('output_watts', 'max_value')
 OUTPUT_WATTS_MAX_RATE = config.getint('output_watts', 'max_rate')
+OUTPUT_WATTS_MIN_CONFIDENCE = config.getint('output_watts', 'min_confidence')
 
 config = {
     'general': {
@@ -86,7 +89,8 @@ config = {
             'erode_cycles': CHARGING_STATUS_ERODE_CYCLES,
             'dilate': CHARGING_STATUS_DILATE,
             'max_value': CHARGING_STATUS_MAX_VALUE,
-            'max_rate': CHARGING_STATUS_MAX_RATE
+            'max_rate': CHARGING_STATUS_MAX_RATE,
+            'min_confidence': CHARGING_STATUS_MIN_CONFIDENCE
         },
         'input_watts': {
             'enabled': INPUT_WATTS_ENABLED,
@@ -101,7 +105,8 @@ config = {
             'erode_cycles': INPUT_WATTS_ERODE_CYCLES,
             'dilate': INPUT_WATTS_DILATE,
             'max_value': INPUT_WATTS_MAX_VALUE,
-            'max_rate': INPUT_WATTS_MAX_RATE
+            'max_rate': INPUT_WATTS_MAX_RATE,
+            'min_confidence': INPUT_WATTS_MIN_CONFIDENCE
         },
         'output_watts': {
             'enabled': OUTPUT_WATTS_ENABLED,
@@ -116,7 +121,8 @@ config = {
             'erode_cycles': OUTPUT_WATTS_ERODE_CYCLES,
             'dilate': OUTPUT_WATTS_DILATE,
             'max_value': OUTPUT_WATTS_MAX_VALUE,
-            'max_rate': OUTPUT_WATTS_MAX_RATE
+            'max_rate': OUTPUT_WATTS_MAX_RATE,
+            'min_confidence': OUTPUT_WATTS_MIN_CONFIDENCE
         }
     }
 }

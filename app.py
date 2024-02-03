@@ -7,7 +7,7 @@ from prometheus_flask_exporter import PrometheusMetrics, Gauge
 from datetime import datetime
 
 from log import LOGGER
-from metric import Metric
+from metrics import StandardMetric, ConfidenceMetric
 from config import config
 
 app = Flask(__name__)
@@ -50,12 +50,12 @@ def upload(thing):
     for metric in config['metrics']:
         if config['metrics'][metric]['enabled']:
             LOGGER.info('Getting metric %s of %s' % (metric, thing))
-            metric_obj = get(img, config['metrics'], metric, suffix)
-            response[metric] = set_prom_metric_with_validation(metric_obj, thing)
-            response[metric + "_confidence"] = metric_obj.get_confidence()
+            standard_metric_obj = get(img, config['metrics'], metric, suffix)
+            response = set_prom_metric_with_validation(standard_metric_obj, thing)
+            # response[metric + "_confidence"] = standard_metric_obj.get_confidence_metric().get_value()
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric, thing))
-    return jsonify(response)
+    return jsonify(response.serialize() if isinstance(response, StandardMetric) else response)
 
 def set_metric(metric, labels, value):
     if value is not None:
@@ -85,14 +85,17 @@ def get(img, config, config_key, suffix):
     confidence = data['conf'][4]
     value_from_data = int(data['text'][4])
     if config_key in metric_objects:
-        metric_obj = metric_objects[config_key]
+        standard_metric_obj = metric_objects[config_key]
         LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
-        metric_obj.set_value(value_from_data, confidence)
+        standard_metric_obj.set_value(value_from_data)
+        standard_metric_obj.get_confidence_metric().set_value(confidence)
     else:
         LOGGER.info('Creating new metric object for %s' % config_key)
-        metric_obj = Metric(config_key, value_from_data, confidence, config[config_key]['max_value'], config[config_key]['max_rate'])
-    metric_objects[config_key] = metric_obj
-    return metric_obj
+        standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
+        confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
+        standard_metric_obj.set_confidence_metric(confidence_metric_obj)
+    metric_objects[config_key] = standard_metric_obj
+    return standard_metric_obj
 
 def erode_image(cycles, image):
      for _ in range(cycles):
@@ -130,16 +133,17 @@ def manipulate_image(img, threshold=230, crop=(1730, 1650, 2010, 1890), filename
         im_border.save(dest_filename, quality=100, subsampling=0)
     return im_border
 
-def set_prom_metric_with_validation(metric_obj, thing):
-    if metric_obj.validate():
-        set_metric(prom_metrics[metric_obj.get_name()], thing, metric_obj.get_value())
-        set_metric(prom_metrics[metric_obj.get_name() + "_confidence"], thing, metric_obj.get_confidence())
-        set_metric(prom_metrics["last_updated"], thing, metric_obj.get_last_updated())
-        return metric_obj.get_value()
+def set_prom_metric_with_validation(standard_metric_obj, thing):
+    if standard_metric_obj.validate() and standard_metric_obj.get_confidence_metric().validate():
+        set_metric(prom_metrics[standard_metric_obj.get_name()], thing, standard_metric_obj.get_value())
+        set_metric(prom_metrics[standard_metric_obj.get_name() + "_confidence"], thing, standard_metric_obj.get_confidence_metric().get_value())
+        set_metric(prom_metrics["last_updated"], thing, standard_metric_obj.get_last_updated())
+        return standard_metric_obj
     else:
-        msg = "metric validation failed. value: %s, previous value: %s, max value: %s, max rate: %s, sample frequency: %s" % (metric_obj.get_value(), metric_obj.get_previous_value(), metric_obj.get_max_value(), metric_obj.get_max_rate(), metric_obj.get_sample_frequency())
-        metric_obj.revert_value()
-        return msg
+        validation_error = {}
+        validation_error["error"] = "metric validation failed. value: %s, previous value: %s, max value: %s, max rate: %s, sample frequency: %s, confidence: %s, min confidence: %s" % (standard_metric_obj.get_value(), standard_metric_obj.get_previous_value(), standard_metric_obj.get_max_value(), standard_metric_obj.get_max_rate(), standard_metric_obj.get_sample_frequency(), standard_metric_obj.get_confidence_metric().get_value(), standard_metric_obj.get_confidence_metric().get_min_value())
+        standard_metric_obj.revert_value()
+        return validation_error
 
 app.run(host='0.0.0.0', port=config['general']['port'])
 
