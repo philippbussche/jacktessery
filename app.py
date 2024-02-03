@@ -1,6 +1,7 @@
 # create a flask app with one route for uploading images
 
-from flask import Flask, request, jsonify
+from flask import Flask, request
+import json
 from PIL import Image, ImageOps, ImageFilter
 from pytesseract import pytesseract
 from prometheus_flask_exporter import PrometheusMetrics, Gauge
@@ -37,7 +38,7 @@ def index():
 
 @app.route('/upload/<thing>', methods=['POST'])
 def upload(thing):
-    response = {'thing': thing}
+    response = {'thing': thing, 'metrics': []}
     # generate file suffix which is the current timestamp
     suffix = str(int(datetime.now().timestamp()))   
     # get the image file from the request
@@ -51,10 +52,11 @@ def upload(thing):
         if config['metrics'][metric]['enabled']:
             LOGGER.info('Getting metric %s of %s' % (metric, thing))
             standard_metric_obj = get(img, config['metrics'], metric, suffix)
-            response = set_prom_metric_with_validation(standard_metric_obj, thing)
+            if standard_metric_obj is not None:
+                response["metrics"].append(set_prom_metric_with_validation(standard_metric_obj, thing))
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric, thing))
-    return jsonify(response.serialize() if isinstance(response, StandardMetric) else response)
+    return json.dumps(response, default=lambda o: o.__dict__, indent=4)
 
 def set_metric(metric, labels, value):
     if value is not None:
@@ -79,22 +81,25 @@ def get_data(img, lang, config):
 
 def get(img, config, config_key, suffix):
     img = manipulate_image(img, threshold=config[config_key]['threshold'], crop=(config[config_key]['x1'], config[config_key]['y1'], config[config_key]['x2'], config[config_key]['y2']), filename='result_' + config_key + "_" + suffix + ".jpg", suffix=suffix, erode=config[config_key]['erode'], erode_cycles=config[config_key]['erode_cycles'], dilate=config[config_key]['dilate'])
-    value = get_value(img, lang=config[config_key]['lang'], config=config[config_key]['config'])
     data = get_data(img, lang=config[config_key]['lang'], config=config[config_key]['config'])
-    confidence = data['conf'][4]
-    value_from_data = int(data['text'][4])
-    if config_key in metric_objects:
-        standard_metric_obj = metric_objects[config_key]
-        LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
-        standard_metric_obj.set_value(value_from_data)
-        standard_metric_obj.get_confidence_metric().set_value(confidence)
+    if len(data['text']) < 5 or len(data['conf']) < 5:
+        LOGGER.warning('No value detected for metric %s' % config_key)
+        return None
     else:
-        LOGGER.info('Creating new metric object for %s' % config_key)
-        standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
-        confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
-        standard_metric_obj.set_confidence_metric(confidence_metric_obj)
-    metric_objects[config_key] = standard_metric_obj
-    return standard_metric_obj
+        confidence = data['conf'][4]
+        value_from_data = int(data['text'][4])
+        if config_key in metric_objects:
+            standard_metric_obj = metric_objects[config_key]
+            LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
+            standard_metric_obj.set_value(value_from_data)
+            standard_metric_obj.get_confidence_metric().set_value(confidence)
+        else:
+            LOGGER.info('Creating new metric object for %s' % config_key)
+            standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
+            confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
+            standard_metric_obj.set_confidence_metric(confidence_metric_obj)
+        metric_objects[config_key] = standard_metric_obj
+        return standard_metric_obj
 
 def erode_image(cycles, image):
      for _ in range(cycles):
@@ -140,7 +145,7 @@ def set_prom_metric_with_validation(standard_metric_obj, thing):
         return standard_metric_obj
     else:
         validation_error = {}
-        validation_error["error"] = "metric validation failed. value: %s, previous value: %s, max value: %s, max rate: %s, sample frequency: %s, confidence: %s, min confidence: %s" % (standard_metric_obj.get_value(), standard_metric_obj.get_previous_value(), standard_metric_obj.get_max_value(), standard_metric_obj.get_max_rate(), standard_metric_obj.get_sample_frequency(), standard_metric_obj.get_confidence_metric().get_value(), standard_metric_obj.get_confidence_metric().get_min_value())
+        validation_error["error"] = "metric validation failed. name: %s, value: %s, previous value: %s, max value: %s, max rate: %s, sample frequency: %s, confidence: %s, min confidence: %s" % (standard_metric_obj.name, standard_metric_obj.get_value(), standard_metric_obj.get_previous_value(), standard_metric_obj.get_max_value(), standard_metric_obj.get_max_rate(), standard_metric_obj.get_sample_frequency(), standard_metric_obj.get_confidence_metric().get_value(), standard_metric_obj.get_confidence_metric().get_min_value())
         standard_metric_obj.revert_value()
         return validation_error
 

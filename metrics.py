@@ -112,21 +112,6 @@ class StandardMetric(Metric):
             else:
                 LOGGER.info('Metric %s is valid' % self.name)
                 return True
-            
-    def serialize(self):
-        return {
-            'name': self.name,
-            'value': self.value,
-            'previous_value': self.previous_value,
-            'last_updated': self.last_updated,
-            'sample_frequency': self.sample_frequency,
-            'max_value': self.max_value,
-            'max_rate': self.max_rate,
-            'confidence': {
-                'value': self.confidence_metric.value,
-                'min_value': self.confidence_metric.min_value
-            }
-        }
     
 class ConfidenceMetric(Metric):
     def __init__(self, name, value, min_value):
