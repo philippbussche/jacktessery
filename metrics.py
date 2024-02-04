@@ -9,6 +9,8 @@ class Metric:
         self.value = value
         self.last_updated = round(time.time(), 0)
         self.sample_frequency = 0
+        self.validated_succesfully = False
+        self.validation_error = None
 
     # get the metric name
     def get_name(self):
@@ -60,6 +62,9 @@ class Metric:
         LOGGER.info('Setting metric %s sample frequency to %s' % (self.name, rounded_sample_frequency))
         self.sample_frequency = rounded_sample_frequency
 
+    def set_validation_error(self, validation_error):
+        self.validation_error = validation_error
+
 class StandardMetric(Metric):
     def __init__(self, name, value, max_value, max_rate):
         super().__init__(name, value)
@@ -102,15 +107,23 @@ class StandardMetric(Metric):
     def validate(self):
         if self.is_value_higher_than_max_value() or self.is_value_lower_than_zero():
             LOGGER.warning('Metric %s is not valid' % self.name)
-            LOGGER.warning('Metric %s is higher than max value or lower than 0 (metric value: %s).' % (self.name, self.value))
+            validation_error = "Metric %s is higher than max value or lower than 0 (metric value: %s)." % (self.name, self.value)
+            LOGGER.warning(validation_error)
+            self.validated_succesfully = False
+            self.validation_error = validation_error
             return False
         else:
             if self.is_delta_higher_than_max_rate() and self.get_sample_frequency() < config['monitoring']['grace_period']:
                 LOGGER.warning('Metric %s is not valid' % self.name)
-                LOGGER.warning('Delta for metric %s is higher than max rate but has a sample frequency within the grace period (delta value: %s, max rate: %s, sample frequency: %s, grace period: %s).' % (self.name, abs(self.value - self.previous_value), self.max_rate, round(self.get_sample_frequency(), 0), config['monitoring']['grace_period']))
+                validation_error = "Delta for metric %s is higher than max rate but has a sample frequency within the grace period (delta value: %s, max rate: %s, sample frequency: %s, grace period: %s)." % (self.name, abs(self.value - self.previous_value), self.max_rate, round(self.get_sample_frequency(), 0), config['monitoring']['grace_period'])
+                LOGGER.warning(validation_error)
+                self.validated_succesfully = False
+                self.validation_error = validation_error
                 return False
             else:
                 LOGGER.info('Metric %s is valid' % self.name)
+                self.validated_succesfully = True
+                self.validation_error = None
                 return True
     
 class ConfidenceMetric(Metric):
@@ -130,9 +143,14 @@ class ConfidenceMetric(Metric):
     def validate(self):
         if self.is_value_lower_than_min_value():
             LOGGER.warning('Metric %s is not valid' % self.name)
-            LOGGER.warning('Metric %s is lower than min value (metric value: %s, min value: %s).' % (self.name, self.value, self.min_value))
+            validation_error = "Metric %s is lower than min value (metric value: %s, min value: %s)." % (self.name, self.value, self.min_value)
+            LOGGER.warning(validation_error)
+            self.validated_succesfully = False
+            self.validation_error = validation_error
             return False
         else:
             LOGGER.info('Metric %s is valid' % self.name)
+            self.validated_succesfully = True
+            self.validation_error = None
             return True
         

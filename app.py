@@ -53,7 +53,8 @@ def upload(thing):
             LOGGER.info('Getting metric %s of %s' % (metric, thing))
             standard_metric_obj = get(img, config['metrics'], metric, suffix)
             if standard_metric_obj is not None:
-                response["metrics"].append(set_prom_metric_with_validation(standard_metric_obj, thing))
+                set_prom_metric_with_validation(standard_metric_obj, thing)
+                response["metrics"].append(standard_metric_obj)
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric, thing))
     return json.dumps(response, default=lambda o: o.__dict__, indent=4)
@@ -142,12 +143,8 @@ def set_prom_metric_with_validation(standard_metric_obj, thing):
         set_metric(prom_metrics[standard_metric_obj.get_name()], thing, standard_metric_obj.get_value())
         set_metric(prom_metrics[standard_metric_obj.get_name() + "_confidence"], thing, standard_metric_obj.get_confidence_metric().get_value())
         set_metric(prom_metrics["last_updated"], thing, standard_metric_obj.get_last_updated())
-        return standard_metric_obj
     else:
-        validation_error = {}
-        validation_error["error"] = "metric validation failed. name: %s, value: %s, previous value: %s, max value: %s, max rate: %s, sample frequency: %s, confidence: %s, min confidence: %s" % (standard_metric_obj.name, standard_metric_obj.get_value(), standard_metric_obj.get_previous_value(), standard_metric_obj.get_max_value(), standard_metric_obj.get_max_rate(), standard_metric_obj.get_sample_frequency(), standard_metric_obj.get_confidence_metric().get_value(), standard_metric_obj.get_confidence_metric().get_min_value())
         standard_metric_obj.revert_value()
-        return validation_error
 
 app.run(host='0.0.0.0', port=config['general']['port'])
 
