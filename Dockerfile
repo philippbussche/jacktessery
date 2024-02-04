@@ -23,8 +23,9 @@ COPY data/ssd_alphanum_plus.traineddata /data/ssd_alphanum_plus.traineddata
 COPY config.py /config.py
 COPY config.properties /config.properties
 COPY app.py /app.py
-COPY metric.py /metric.py
+COPY metrics.py /metrics.py
 COPY log.py /log.py
+COPY thing.py /thing.py
 
 ENV TESSDATA_PREFIX=/data
 
