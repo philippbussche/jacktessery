@@ -106,7 +106,7 @@ def get(img, config, config_key, suffix, thing):
                 standard_metric_obj.set_confidence_metric(confidence_metric_obj)
                 thing.add_metric(standard_metric_obj)
         except ValueError:
-            LOGGER.warning('Error parsing values detected (confidence: %s, value: %s).' % (confidence, value_from_data))
+            LOGGER.warning('Error parsing values detected (confidence: %s, value: %s).' % (data['conf'][4], data['text'][4]))
             return None
         return standard_metric_obj
 
