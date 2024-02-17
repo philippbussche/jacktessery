@@ -91,19 +91,23 @@ def get(img, config, config_key, suffix, thing):
         LOGGER.warning('No value detected for metric %s' % config_key)
         return None
     else:
-        confidence = data['conf'][4]
-        value_from_data = int(data['text'][4])
-        if next((True for x in thing.get_metrics() if x.name==config_key), False):
-            standard_metric_obj = next((x for x in thing.get_metrics() if x.name == config_key), None)
-            LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
-            standard_metric_obj.set_value(value_from_data)
-            standard_metric_obj.get_confidence_metric().set_value(confidence)
-        else:
-            LOGGER.info('Creating new metric object for %s' % config_key)
-            standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
-            confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
-            standard_metric_obj.set_confidence_metric(confidence_metric_obj)
-            thing.add_metric(standard_metric_obj)
+        try: 
+            confidence = data['conf'][4]
+            value_from_data = int(data['text'][4])
+            if next((True for x in thing.get_metrics() if x.name==config_key), False):
+                standard_metric_obj = next((x for x in thing.get_metrics() if x.name == config_key), None)
+                LOGGER.info('Metric object for %s already exists. Updating values.' % config_key)
+                standard_metric_obj.set_value(value_from_data)
+                standard_metric_obj.get_confidence_metric().set_value(confidence)
+            else:
+                LOGGER.info('Creating new metric object for %s' % config_key)
+                standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
+                confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
+                standard_metric_obj.set_confidence_metric(confidence_metric_obj)
+                thing.add_metric(standard_metric_obj)
+        except ValueError:
+            LOGGER.warning('Error parsing values detected (confidence: %s, value: %s).' % (data['conf'][4], data['text'][4]))
+            return None
         return standard_metric_obj
 
 def erode_image(cycles, image):
