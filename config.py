@@ -14,6 +14,7 @@ GRACE_PERIOD = config.getint('monitoring', 'grace_period')
 # general image settings
 SAVE_SOURCE_IMG = config.getboolean('general', 'save_source_image')
 SAVE_RESULT_IMG = config.getboolean('general', 'save_result_image')
+SAVE_RESULT_IMG_IN_BUCKET = config.getboolean('general', 'save_result_image_in_bucket')
 RESULT_DIR = config.get('general', 'save_image_path')
 
 # charging status configuration
@@ -69,6 +70,7 @@ config = {
         'port': PORT,
         'save_source_image': SAVE_SOURCE_IMG,
         'save_result_image': SAVE_RESULT_IMG,
+        'save_result_image_in_bucket': SAVE_RESULT_IMG_IN_BUCKET,
         'save_image_path': RESULT_DIR
     },
     'monitoring': {

@@ -6,6 +6,7 @@ from PIL import Image, ImageOps, ImageFilter
 from pytesseract import pytesseract
 from prometheus_flask_exporter import PrometheusMetrics, Gauge
 from datetime import datetime
+from pathlib import Path
 
 from log import LOGGER
 from metrics import StandardMetric, ConfidenceMetric
@@ -56,7 +57,7 @@ def upload(thing_name):
     for metric_name in config['metrics']:
         if config['metrics'][metric_name]['enabled']:
             LOGGER.info('Getting metric %s of %s' % (metric_name, thing_name))
-            standard_metric_obj = get(img, config['metrics'], metric_name, suffix, this_thing)
+            standard_metric_obj = get(img, metric_name, suffix, this_thing)
             if standard_metric_obj is not None:
                 set_prom_metric_with_validation(standard_metric_obj, this_thing)
         else:
@@ -84,9 +85,9 @@ def get_data(img, lang, config):
         data = None
     return data
 
-def get(img, config, config_key, suffix, thing):
-    img = manipulate_image(img, threshold=config[config_key]['threshold'], crop=(config[config_key]['x1'], config[config_key]['y1'], config[config_key]['x2'], config[config_key]['y2']), filename='result_' + config_key + "_" + suffix + ".jpg", suffix=suffix, erode=config[config_key]['erode'], erode_cycles=config[config_key]['erode_cycles'], dilate=config[config_key]['dilate'])
-    data = get_data(img, lang=config[config_key]['lang'], config=config[config_key]['config'])
+def get(img, config_key, suffix, thing):
+    img = manipulate_image(img, threshold=config['metrics'][config_key]['threshold'], crop=(config['metrics'][config_key]['x1'], config['metrics'][config_key]['y1'], config['metrics'][config_key]['x2'], config['metrics'][config_key]['y2']), filename='result_' + config_key + "_" + suffix + ".jpg", suffix=suffix, erode=config['metrics'][config_key]['erode'], erode_cycles=config['metrics'][config_key]['erode_cycles'], dilate=config['metrics'][config_key]['dilate'])
+    data = get_data(img, lang=config['metrics'][config_key]['lang'], config=config['metrics'][config_key]['config'])
     if len(data['text']) < 5 or len(data['conf']) < 5:
         LOGGER.warning('No value detected for metric %s' % config_key)
         return None
@@ -101,10 +102,16 @@ def get(img, config, config_key, suffix, thing):
                 standard_metric_obj.get_confidence_metric().set_value(confidence)
             else:
                 LOGGER.info('Creating new metric object for %s' % config_key)
-                standard_metric_obj = StandardMetric(config_key, value_from_data, config[config_key]['max_value'], config[config_key]['max_rate'])
-                confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config[config_key]['min_confidence'])
+                standard_metric_obj = StandardMetric(config_key, value_from_data, config['metrics'][config_key]['max_value'], config['metrics'][config_key]['max_rate'])
+                confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config['metrics'][config_key]['min_confidence'])
                 standard_metric_obj.set_confidence_metric(confidence_metric_obj)
                 thing.add_metric(standard_metric_obj)
+            if config['general']['save_result_image_in_bucket']:
+                dest_dir = config['general']['save_image_path'] + "/" + str(value_from_data)
+                Path(dest_dir).mkdir(parents=True, exist_ok=True)
+                dest_filename = dest_dir + "/result_" + config_key + "_" + suffix + ".jpg"
+                LOGGER.info('Saving result image to %s (in bucket directory).' % dest_filename)
+                save_image(img, dest_filename)       
         except ValueError:
             LOGGER.warning('Error parsing values detected (confidence: %s, value: %s).' % (data['conf'][4], data['text'][4]))
             return None
@@ -143,7 +150,8 @@ def manipulate_image(img, threshold=230, crop=(1730, 1650, 2010, 1890), filename
     if config['general']['save_result_image']:
         dest_filename = config['general']['save_image_path'] + "/" + filename
         LOGGER.info('Saving result image to %s' % dest_filename)
-        im_border.save(dest_filename, quality=100, subsampling=0)
+        save_image(im_border, dest_filename)
+        # im_border.save(dest_filename, quality=100, subsampling=0)
     return im_border
 
 def set_prom_metric_with_validation(standard_metric_obj, thing):
@@ -153,6 +161,9 @@ def set_prom_metric_with_validation(standard_metric_obj, thing):
         set_metric(prom_metrics["last_updated"], thing.get_name(), standard_metric_obj.get_last_updated())
     else:
         standard_metric_obj.revert_value()
+
+def save_image(img, filename, quality=100, subsampling=0):
+    img.save(filename, quality=quality, subsampling=subsampling)
 
 app.run(host='0.0.0.0', port=config['general']['port'])
 
