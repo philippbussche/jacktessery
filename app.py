@@ -105,13 +105,7 @@ def get(img, config_key, suffix, thing):
                 standard_metric_obj = StandardMetric(config_key, value_from_data, config['metrics'][config_key]['max_value'], config['metrics'][config_key]['max_rate'])
                 confidence_metric_obj = ConfidenceMetric(config_key + "_confidence", confidence, config['metrics'][config_key]['min_confidence'])
                 standard_metric_obj.set_confidence_metric(confidence_metric_obj)
-                thing.add_metric(standard_metric_obj)
-            if config['general']['save_result_image_in_bucket']:
-                dest_dir = config['general']['save_image_path'] + "/" + str(value_from_data)
-                Path(dest_dir).mkdir(parents=True, exist_ok=True)
-                dest_filename = dest_dir + "/result_" + config_key + "_" + suffix + ".jpg"
-                LOGGER.info('Saving result image to %s (in bucket directory).' % dest_filename)
-                save_image(img, dest_filename)       
+                thing.add_metric(standard_metric_obj)   
         except ValueError:
             LOGGER.warning('Error parsing values detected (confidence: %s, value: %s).' % (data['conf'][4], data['text'][4]))
             return None
