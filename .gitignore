@@ -1,4 +1,5 @@
 tmp_images/*
+set_env.sh
 .DS_Store
 __pycache__/
 .vscode/

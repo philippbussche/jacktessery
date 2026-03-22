@@ -1,4 +1,6 @@
 flask
 prometheus-flask-exporter
-pytesseract
+pillow
 configparser
+azure-storage-blob
+requests

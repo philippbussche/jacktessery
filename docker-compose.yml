@@ -2,10 +2,16 @@ version: '3'
 
 services:
   jacktessery:
-    image: "jacktessery:test"
+    image: "jacktessery:agent-1"
     ports:
       - "7003:7003"
     volumes:
       - ./tmp_images:/tmp_images
       - ./config.properties:/config.properties
-      - ./data:/data
+    environment:
+      - AZURE_STORAGE_ACCOUNT_NAME=${AZURE_STORAGE_ACCOUNT_NAME}
+      - AZURE_STORAGE_ACCOUNT_KEY=${AZURE_STORAGE_ACCOUNT_KEY}
+      - AZURE_STORAGE_CONTAINER_NAME=${AZURE_STORAGE_CONTAINER_NAME}
+      - AZURE_AGENT_URL=${AZURE_AGENT_URL}
+      - AZURE_AGENT_CODE=${AZURE_AGENT_CODE}
+      - AZURE_AGENT_PROMPT=${AZURE_AGENT_PROMPT}
