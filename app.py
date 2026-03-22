@@ -144,8 +144,10 @@ def manipulate_image(img, threshold=230, crop=(1730, 1650, 2010, 1890), filename
         im_invert = ImageOps.invert(im_dilate)
     else:
         im_invert = ImageOps.invert(im_crop)
-    # add a border of 5 pixels to the image
-    im_border = ImageOps.expand(im_invert, border=5, fill='black')
+    # first add a border of 10 white pixels to the image
+    im_border = ImageOps.expand(im_invert, border=10, fill='white')
+    # then add a border of 5 black pixels to the image
+    im_border = ImageOps.expand(im_border, border=5, fill='black')
     # save the image to a file 
     if config['general']['save_result_image']:
         dest_filename = config['general']['save_image_path'] + "/" + filename
