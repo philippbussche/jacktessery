@@ -3,13 +3,14 @@ import json
 import os
 import io
 import requests as http_requests
-from PIL import Image, ImageOps
+from PIL import Image
 from prometheus_flask_exporter import PrometheusMetrics, Gauge
 from datetime import datetime
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, generate_blob_sas, BlobSasPermissions
+from datetime import timedelta, timezone
 
 from log import LOGGER
-from metrics import StandardMetric, ConfidenceMetric
+from metrics import StandardMetric
 from thing import Thing
 from config import config
 
@@ -18,6 +19,7 @@ AZURE_STORAGE_ACCOUNT_NAME = os.environ['AZURE_STORAGE_ACCOUNT_NAME']
 AZURE_STORAGE_ACCOUNT_KEY = os.environ['AZURE_STORAGE_ACCOUNT_KEY']
 AZURE_STORAGE_CONTAINER_NAME = os.environ['AZURE_STORAGE_CONTAINER_NAME']
 AZURE_AGENT_URL = os.environ['AZURE_AGENT_URL']
+AZURE_AGENT_CODE = os.environ['AZURE_AGENT_CODE']
 AZURE_AGENT_PROMPT = os.environ['AZURE_AGENT_PROMPT']
 
 blob_service_client = BlobServiceClient(
@@ -34,10 +36,16 @@ for metric in config['metrics']:
     if config['metrics'][metric]['enabled']:
         LOGGER.info('Creating prometheus metric %s' % metric)
         prom_metrics[metric] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], metric), 'Metric %s of a thing' % metric, labelnames=['thing'])
-        prom_metrics[metric + "_confidence"] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], metric + "_confidence"), 'Metric %s confidence of a thing' % metric, labelnames=['thing'])
     else:
         LOGGER.warning('Skipping prometheus metric %s because it is disabled' % metric)
 prom_metrics["last_updated"] = Gauge('%s_%s' % (config['monitoring']['metrics_prefix'], "last_updated"), 'Metric last_updated of a thing', labelnames=['thing'])
+
+prefix = config['monitoring']['metrics_prefix']
+prom_string_metrics = {
+    'weather_diagnosis':   Gauge('%s_weather_diagnosis' % prefix,   'Weather diagnosis',   labelnames=['thing', 'value']),
+    'weather_explanation': Gauge('%s_weather_explanation' % prefix, 'Weather explanation', labelnames=['thing', 'value']),
+}
+last_string_values = {}
 
 monitored_things = {}
 
@@ -62,14 +70,22 @@ def upload(thing_name):
         LOGGER.info('Saving source image to %s' % src_filename)
         img.save(src_filename, quality=100, subsampling=0)
     blob_url = upload_to_blob(img, SOURCE_IMG % suffix)
+    response_json = call_agent(blob_url)
+    if response_json is None:
+        LOGGER.error('No response from agent, skipping metric extraction')
+        return json.dumps(this_thing, default=lambda o: o.__dict__, indent=4)
     for metric_name in config['metrics']:
         if config['metrics'][metric_name]['enabled']:
             LOGGER.info('Getting metric %s of %s' % (metric_name, thing_name))
-            standard_metric_obj = get(metric_name, blob_url, this_thing)
+            standard_metric_obj = get(metric_name, response_json, this_thing)
             if standard_metric_obj is not None:
                 set_prom_metric_with_validation(standard_metric_obj, this_thing)
         else:
             LOGGER.warning('Skipping metric %s of %s because it is disabled' % (metric_name, this_thing.get_name()))
+    weather_check = response_json.get('weather_check')
+    if weather_check:
+        set_string_metric('weather_diagnosis', thing_name, weather_check.get('diagnosis'))
+        set_string_metric('weather_explanation', thing_name, weather_check.get('explanation'))
     return json.dumps(this_thing, default=lambda o: o.__dict__, indent=4)
 
 def upload_to_blob(img, blob_name):
@@ -81,36 +97,73 @@ def upload_to_blob(img, blob_name):
         blob=blob_name
     )
     blob_client.upload_blob(img_bytes, overwrite=True)
+    sas_token = generate_blob_sas(
+        account_name=AZURE_STORAGE_ACCOUNT_NAME,
+        container_name=AZURE_STORAGE_CONTAINER_NAME,
+        blob_name=blob_name,
+        account_key=AZURE_STORAGE_ACCOUNT_KEY,
+        permission=BlobSasPermissions(read=True),
+        expiry=datetime.now(timezone.utc) + timedelta(minutes=10)
+    )
+    sas_url = f"https://{AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{AZURE_STORAGE_CONTAINER_NAME}/{blob_name}?{sas_token}"
     LOGGER.info('Uploaded image to blob storage: %s' % blob_client.url)
-    return blob_client.url
+    return sas_url
 
-def call_agent(metric_name, image_url):
-    prompt = AZURE_AGENT_PROMPT.format(metric_name=metric_name, image_url=image_url)
-    LOGGER.info('Calling agent for metric %s with image %s' % (metric_name, image_url))
-    response = http_requests.post(AZURE_AGENT_URL, json={'prompt': prompt})
+def call_agent(image_url):
+    prompt = AZURE_AGENT_PROMPT.format(image_url=image_url)
+    LOGGER.info('Calling agent with image %s' % image_url)
+    response = http_requests.post(AZURE_AGENT_URL, params={'code': AZURE_AGENT_CODE}, json={'prompt': prompt}, stream=True)
     response.raise_for_status()
-    return response.text.strip()
-
-def get(metric_name, blob_url, thing):
-    try:
-        response_text = call_agent(metric_name, blob_url)
-        value = int(float(response_text))
-    except Exception as e:
-        LOGGER.warning('Error getting metric %s from agent: %s' % (metric_name, e))
+    full_text = ''.join(chunk.decode('utf-8') for chunk in response.iter_content(chunk_size=None) if chunk)
+    LOGGER.info('Agent response status: %s' % response.status_code)
+    LOGGER.info('Agent response body: %s' % full_text)
+    if not full_text:
+        LOGGER.error('Agent returned status %s with empty body' % response.status_code)
         return None
-    confidence = 100
+    outer = json.loads(full_text)
+    response_text = outer.get('response', '')
+    # extract JSON object regardless of any surrounding prose or code fences
+    start = response_text.find('{')
+    end = response_text.rfind('}')
+    if start == -1 or end == -1:
+        LOGGER.error('No JSON object found in agent response: %s' % response_text)
+        return None
+    return json.loads(response_text[start:end + 1])
+
+def get_nested(data, path):
+    for key in path.split('.'):
+        if not isinstance(data, dict):
+            return None
+        data = data.get(key)
+    return data
+
+def get(metric_name, response_json, thing):
+    json_path = config['metrics'][metric_name]['json_path']
+    raw_value = get_nested(response_json, json_path)
+    if raw_value is None:
+        LOGGER.warning('No value for metric %s (json_path: %s)' % (metric_name, json_path))
+        return None
+    value = float(1 if raw_value is True else 0 if raw_value is False else raw_value)
     if next((True for x in thing.get_metrics() if x.name == metric_name), False):
         standard_metric_obj = next((x for x in thing.get_metrics() if x.name == metric_name), None)
         LOGGER.info('Metric object for %s already exists. Updating values.' % metric_name)
         standard_metric_obj.set_value(value)
-        standard_metric_obj.get_confidence_metric().set_value(confidence)
     else:
         LOGGER.info('Creating new metric object for %s' % metric_name)
         standard_metric_obj = StandardMetric(metric_name, value, config['metrics'][metric_name]['max_value'], config['metrics'][metric_name]['max_rate'])
-        confidence_metric_obj = ConfidenceMetric(metric_name + "_confidence", confidence, config['metrics'][metric_name]['min_confidence'])
-        standard_metric_obj.set_confidence_metric(confidence_metric_obj)
         thing.add_metric(standard_metric_obj)
     return standard_metric_obj
+
+def set_string_metric(metric_name, thing_name, new_value):
+    if new_value is None:
+        return
+    key = (metric_name, thing_name)
+    old_value = last_string_values.get(key)
+    if old_value is not None and old_value != new_value:
+        prom_string_metrics[metric_name].labels(thing=thing_name, value=old_value).set(0)
+    prom_string_metrics[metric_name].labels(thing=thing_name, value=new_value).set(1)
+    last_string_values[key] = new_value
+    LOGGER.info('Setting string metric %s to %s' % (metric_name, new_value))
 
 def set_metric(metric, labels, value):
     if value is not None:
@@ -120,9 +173,8 @@ def set_metric(metric, labels, value):
         LOGGER.warning('Not setting prometheus metric %s because value is None' % metric)
 
 def set_prom_metric_with_validation(standard_metric_obj, thing):
-    if standard_metric_obj.validate() and standard_metric_obj.get_confidence_metric().validate():
+    if standard_metric_obj.validate():
         set_metric(prom_metrics[standard_metric_obj.get_name()], thing.get_name(), standard_metric_obj.get_value())
-        set_metric(prom_metrics[standard_metric_obj.get_name() + "_confidence"], thing.get_name(), standard_metric_obj.get_confidence_metric().get_value())
         set_metric(prom_metrics["last_updated"], thing.get_name(), standard_metric_obj.get_last_updated())
     else:
         standard_metric_obj.revert_value()
